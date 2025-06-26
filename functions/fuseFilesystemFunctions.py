@@ -119,7 +119,9 @@ class TorBoxMediaCenterFuse(Fuse):
 
         self.cache = {}
         self.block_size = 1024 * 1024 * 16
-        self.max_blocks = 16
+        self.max_blocks_per_link = 32
+        self.max_blocks = 128  # Total blocks in cache
+        self.max_linsks = 16  # Max links in cache
 
     def getFiles(self):
         while True:
@@ -199,17 +201,33 @@ class TorBoxMediaCenterFuse(Fuse):
                 # save block to cache
                 self.cache[(path, block_index)] = block_data
                 # lru cache
-                if len(self.cache) > self.max_blocks * len(self.cached_links):
+                logging.debug(f"Cache params: {len(self.cache)} blocks, max {self.max_blocks_per_link * len(self.cached_links)} blocks (per link), max {self.max_blocks} blocks")
+                if len(self.cache) > self.max_blocks_per_link * len(self.cached_links) or len(self.cache) > self.max_blocks:
                     keys_to_remove = list(self.cache.keys())[:len(self.cache) - self.max_blocks]
+                    logging.debug(f"Removing {len(keys_to_remove)} blocks from cache")
                     for key in keys_to_remove:
+                        logging.debug(f"Removing block {key} from cache")
                         del self.cache[key]
+                if len(self.cached_links) > self.max_linsks:
+                    links_to_remove = list(self.cached_links.keys())[:len(self.cached_links) - self.max_linsks]
+                    logging.debug(f"Removing {len(links_to_remove)} links from cache")
+                    for link in links_to_remove:
+                        logging.debug(f"Removing link {link} from cache")
+                        del self.cached_links[link]
+                        keys_to_remove = [k for k in self.cache.keys() if k[0] == link]
+                        for key in keys_to_remove:
+                            logging.debug(f"Removing block {key} from cache")
+                            del self.cache[key]
             # get block from cache
             block_data = self.cache[(path, block_index)]
             
             start_offset_in_block = max(0, offset - block_offset)
             end_offset_in_block = min(len(block_data), offset + size - block_offset)
             
-            buffer.extend(block_data[start_offset_in_block:end_offset_in_block])
+            view = memoryview(block_data)[start_offset_in_block:end_offset_in_block]
+            buffer.extend(view)
+            # Explicitly delete reference to block_data to help GC
+            del block_data
         
         return bytes(buffer)
     
@@ -238,6 +256,9 @@ def runFuse():
     server.fuse_args.add(
         "allow_other"
     )
+    # server.fuse_args.add(
+    #     "allow_root"
+    # )
     server.fuse_args.add(
         "-f"
     )

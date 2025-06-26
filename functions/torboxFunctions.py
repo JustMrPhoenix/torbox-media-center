@@ -6,6 +6,7 @@ from library.torbox import TORBOX_API_KEY
 from functions.mediaFunctions import constructSeriesTitle, cleanTitle, cleanYear
 from functions.databaseFunctions import insertData
 import os
+import time
 import logging
 
 class DownloadType(Enum):
@@ -27,6 +28,7 @@ def getUserDownloads(type: DownloadType):
 
     offset = 0
     limit = 1000
+    # limit = 1
 
     file_data = []
     
@@ -48,6 +50,7 @@ def getUserDownloads(type: DownloadType):
             break
         file_data.extend(data)
         offset += limit
+        # break  # For testing purposes, remove this line to fetch all data
         if len(data) < limit:
             break
 
@@ -151,7 +154,7 @@ def getDownloadLink(url: str):
         return response.headers.get('Location')
     return url
 
-def downloadFile(url: str, size: int, offset: int = 0):
+def downloadFile(url: str, size: int, offset: int = 0, retry: int = 3):
     headers = {
         "Range": f"bytes={offset}-{offset + size - 1}",
         **general_http_client.headers,
@@ -161,6 +164,15 @@ def downloadFile(url: str, size: int, offset: int = 0):
         return response.content
     elif response.status_code == httpx.codes.PARTIAL_CONTENT:
         return response.content
+    elif response.status_code == httpx.codes.TOO_MANY_REQUESTS:
+        logging.error("Too many requests. Please try again later.")
+        if retry > 0:
+            time.sleep(60)
+            logging.info(f"Retrying download. Attempts left: {retry}")
+            return downloadFile(url, size, offset, retry - 1)
+        else:
+            logging.error("Max retries reached. Download failed.")
+            raise Exception("Max retries reached. Download failed.")
     else:
         logging.error(f"Error downloading file: {response.status_code}")
         raise Exception(f"Error downloading file: {response.status_code}")

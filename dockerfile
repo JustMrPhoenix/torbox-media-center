@@ -30,5 +30,6 @@ COPY . .
 ENV TORBOX_API_KEY=
 ENV MOUNT_METHOD=strm
 ENV MOUNT_PATH=/torbox
+RUN chown 1000:1000 -R /app
 
 CMD ["python", "main.py"]

@@ -5,7 +5,7 @@ import logging
 from sys import platform
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s,%(msecs)03d %(name)s %(levelname)s %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
 )
@@ -49,8 +49,9 @@ if __name__ == "__main__":
             scheduler.start()
         elif mount_method == "fuse":
             from functions.fuseFilesystemFunctions import runFuse
-            scheduler.start()
+            print("Mounting FUSE filesystem...")
             runFuse()
+            scheduler.start()
     except (KeyboardInterrupt, SystemExit):
         if mount_method == "fuse":
             from functions.fuseFilesystemFunctions import unmountFuse
