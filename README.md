@@ -92,7 +92,11 @@ To run this project you will need to add the following environment variables to 
 
 `MOUNT_REFRESH_TIME` How fast you would like your mount to look for new files. Must be either `slow` for every 3 hours, `normal` for every 2 hours, `fast` for every 1 hour, or `instant` for every 6 minutes. The default is `fast` and is optional.
 
-## 🐳 Running on Docker (recommended)
+## 🐳 Running on Docker with one command (recommended)
+
+We provide bash scripts for running the TorBox Media Center easily by simply copying the script to your server or computer, and running it, following the prompts. This can be helpful if you aren't familiar with Docker, permissions or servers in general. Simply choose one in [this folder](https://github.com/TorBox-App/torbox-media-center/blob/main/scripts) that pertains to your system and run it in the terminal.
+
+## 🐳 Running on Docker manually
 
 1. Make sure you have Docker installed on your server/computer. You can find instructions on how to install Docker [here](https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-22-04) *(you can change your distribution in the guide)*.
 2. Edit the below Docker command with your proper environment variables and options. More Docker run commands can be found [here](https://github.com/TorBox-App/torbox-media-center/blob/main/docker.md).
@@ -158,6 +162,48 @@ python3 main.py
 ```
 
 7. Wait for the files to be mounted to your local machine.
+
+## 🩺 Troubleshooting ##
+
+### Nothing is showing up in the mounted space! ###
+
+This can usually happen due to one of the following:
+
+1. There was an error during the processing/scraping phase where the media center attempts to get your files. Check your logs for any errors.
+2. Your folder permissions are incorrect. Make sure that Docker (or the user running Docker or the Python script) has acess to the the folder you have set.
+   1. You can remedy this by using the command: `chown` on the folder to change the permissions.
+   2. If using Docker, you can set the environmental variables, `PUID` and `PGID` to the user and group that owns the folder.
+3. The folder does not exist. If you aren't using Docker or the easy setup scripts, then it is likely that the folder won't exist where the files need to be beforehand. Make this folder.
+
+### My Plex/Jellyfin/Emby cannot see the files in my mounted space! ###
+
+Make sure that your Plex/Jellyfin/Emby has access to the mounted folder outside of Docker. When you run Plex, Jellyfin, or Emby inside a Docker container, it's like the app is running in its own little isolated world, which creates a path mapping issue where your media files might appear at `/torbox/movies` inside Docker while those same files are actually located at `/home/user/torbox/movies` on your actual computer. Your media server needs to access files that exist on your real computer (outside Docker), but it's running inside Docker where the file paths look different, and if the permissions aren't set up correctly, the media server won't be able to read your movie and TV show files. 
+
+For example, if you have TorBox Media Center files stored at `/home/wamy/torbox/movies` on your computer and you map it to `/torbox/movies` inside your Docker container, Plex/Jellyfin/Emby needs to access the files at `/home/wamy/torbox/movies` __not__ `/torbox/movies`. Heres what the configuration would look like for both applications:
+
+#### TorBox Media Center ####
+
+This ensures that the files will be available on the host system at `/home/wamy/torbox`.
+
+```
+-v /home/wamy/torbox:/torbox
+-e MOUNT_PATH=/torbox
+```
+
+#### Plex/Jellyfin/Emby ####
+
+This ensures that Plex/Jellyfin/Emby can see the TorBox Media Center files on the host system.
+
+```
+-v /home/wamy/torbox:/torbox-media-center
+```
+
+Then inside your Plex/Jellyfin/Emby container, set the library location to /torbox-media-center/movies for movies, and /torbox-media-center/series for TV shows.
+
+
+### I cannot modify the files inside of the Fuse path! ###
+
+The Fuse mount is not meant to be editable, it is read-only. You cannot rename files, delete files, or move them around. This is by design as this software handles that. To delete a file, simply delete it from your TorBox account.
 
 ## 🆘 Support
 

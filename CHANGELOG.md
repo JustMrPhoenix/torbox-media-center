@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.2.0](https://github.com/TorBox-App/torbox-media-center/compare/v1.1.0...v1.2.0) (2025-06-26)
+
+
+### Features
+
+* adds easy scripts and troubleshooting section in readme ([393a85f](https://github.com/TorBox-App/torbox-media-center/commit/393a85fc0fbcba9d757419e65c0032f5ff940d82))
+* adds retries to http transport ([39c3fef](https://github.com/TorBox-App/torbox-media-center/commit/39c3fef6ca587a0ed8e6fec77c93fba3c8d23e30))
+* processes files in parallel for faster processing ([fcf5936](https://github.com/TorBox-App/torbox-media-center/commit/fcf5936e8cbc868465d1582aef90f6789a00cf7e))
+
+
+### Bug Fixes
+
+* adds timeout exception handling ([bc31cc5](https://github.com/TorBox-App/torbox-media-center/commit/bc31cc5d4b6c059f97d4fc39cef4e0dfba6b2986))
+* handles when year is None, uses traceback in error ([da43d07](https://github.com/TorBox-App/torbox-media-center/commit/da43d075c39eae9e6ea77679eee328670ee14710))
+
 ## [1.1.0](https://github.com/TorBox-App/torbox-media-center/compare/v1.0.0...v1.1.0) (2025-05-09)
 
 
