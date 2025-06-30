@@ -49,9 +49,9 @@ if __name__ == "__main__":
             scheduler.start()
         elif mount_method == "fuse":
             from functions.fuseFilesystemFunctions import runFuse
+            scheduler.start()
             print("Mounting FUSE filesystem...")
             runFuse()
-            scheduler.start()
     except (KeyboardInterrupt, SystemExit):
         if mount_method == "fuse":
             from functions.fuseFilesystemFunctions import unmountFuse

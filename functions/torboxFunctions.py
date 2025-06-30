@@ -10,6 +10,7 @@ import time
 import logging
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import datetime as dt
 import multiprocessing
 
 class DownloadType(Enum):
@@ -43,6 +44,8 @@ def process_file(item, file, type):
         "file_size": file.get("size"),
         "file_mimetype": file.get("mimetype"),
         "path": file.get("name"),
+        "created_at": file.get("created_at"),
+        "updated_at": file.get("updated_at"),
         "download_link": f"https://api.torbox.app/v1/api/{type.value}/requestdl?token={TORBOX_API_KEY}&{IDType[type.value].value}={item.get('id')}&file_id={file.get('id')}&redirect=true",
         "extension": os.path.splitext(file.get("short_name"))[-1],              
     }
@@ -99,10 +102,16 @@ def getUserDownloads(type: DownloadType):
     
     # Collect all files to process
     files_to_process = []
+    now = int(time.time())
     for item in file_data:
         if not item.get("cached", False):
             continue
-        for file in item.get("files", []):
+        for file in item.get("files", []): 
+            # "created_at": "2025-06-29T22:08:55Z",
+            # "updated_at": "2025-06-29T22:08:55Z",
+            # parse created_at and updated_at to datetime objects if needed
+            file["created_at"] = int(dt.datetime.fromisoformat(item.get("created_at", "1970-01-01T00:00:00Z").replace("Z", "+00:00")).timestamp() or now)
+            file["updated_at"] = int(dt.datetime.fromisoformat(item.get("updated_at", "1970-01-01T00:00:00Z").replace("Z", "+00:00")).timestamp() or now)
             files_to_process.append((item, file))
     
     # Process files in parallel
@@ -202,8 +211,10 @@ def downloadFile(url: str, size: int, offset: int = 0, retry: int = 3):
     elif response.status_code == httpx.codes.TOO_MANY_REQUESTS:
         logging.error("Too many requests. Please try again later.")
         if retry > 0:
-            time.sleep(60)
+            sleep_time = min(20 * (4 - retry), 20)
             logging.info(f"Retrying download. Attempts left: {retry}")
+            logging.debug(f"Retrying download for {url} with size {size} and offset {offset}. Sleeped for {sleep_time} seconds.")
+            time.sleep(sleep_time)
             return downloadFile(url, size, offset, retry - 1)
         else:
             logging.error("Max retries reached. Download failed.")

@@ -150,6 +150,10 @@ class TorBoxMediaCenterFuse(Fuse):
             file_info = self.vfs.get_file(path)
             st.st_mode = stat.S_IFREG | 0o444
             st.st_nlink = 1
+            # logging.debug(f"File info: {file_info}")
+            st.st_atime = file_info.get('updated_at', now)
+            st.st_mtime = file_info.get('updated_at', now)
+            st.st_ctime = file_info.get('created_at', now)
             st.st_size = file_info.get('file_size', 0)
             return st
             
@@ -201,7 +205,7 @@ class TorBoxMediaCenterFuse(Fuse):
                 # save block to cache
                 self.cache[(path, block_index)] = block_data
                 # lru cache
-                logging.debug(f"Cache params: {len(self.cache)} blocks, max {self.max_blocks_per_link * len(self.cached_links)} blocks (per link), max {self.max_blocks} blocks")
+                logging.debug(f"Cache params: {len(self.cache)} blocks, max {self.max_blocks_per_link * len(self.cached_links)} blocks ({self.max_blocks_per_link} per link), max {self.max_blocks} blocks")
                 if len(self.cache) > self.max_blocks_per_link * len(self.cached_links) or len(self.cache) > self.max_blocks:
                     keys_to_remove = list(self.cache.keys())[:len(self.cache) - self.max_blocks]
                     logging.debug(f"Removing {len(keys_to_remove)} blocks from cache")
