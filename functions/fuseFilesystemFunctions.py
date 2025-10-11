@@ -9,6 +9,12 @@ import logging
 from functions.appFunctions import getAllUserDownloads
 import threading
 from sys import platform
+from collections import OrderedDict  # Added for LRU cache
+import gc  # Added for explicit garbage collection
+try:
+    import psutil  # For memory usage logging
+except ImportError:
+    psutil = None
 
 # Pull in some spaghetti to make this stuff work without fuse-py being installed
 try:
@@ -115,9 +121,9 @@ class TorBoxMediaCenterFuse(Fuse):
         self.vfs = VirtualFileSystem(self.files)
         self.file_handles = {}
         self.next_handle = 1
-        self.cached_links = {}
-
-        self.cache = {}
+        # Use OrderedDict for LRU cache
+        self.cached_links = OrderedDict()
+        self.cache = OrderedDict()
         self.block_size = 1024 * 1024 * 16
         self.max_blocks_per_link = 32
         self.max_blocks = 128  # Total blocks in cache
@@ -175,64 +181,96 @@ class TorBoxMediaCenterFuse(Fuse):
         if (flags & accmode) != os.O_RDONLY:
             return -errno.EACCES
     
+    def log_memory_usage(self, context=""):
+        if psutil:
+            process = psutil.Process(os.getpid())
+            mem_info = process.memory_info()
+            logging.debug(f"[MEMORY] {context} RSS: {mem_info.rss / (1024*1024):.2f} MB, VMS: {mem_info.vms / (1024*1024):.2f} MB")
+        else:
+            logging.debug(f"[MEMORY] {context} psutil not installed.")
+
     def read(self, path, size, offset):
+        self.log_memory_usage("Before read")
         logging.debug(f"READ Path: {path}")
         logging.debug(f"READ Size: {size}")
         logging.debug(f"READ Offset: {offset}")
         file = self.vfs.get_file(path)
-        
+
+        # LRU for cached_links
         if path not in self.cached_links:
             self.cached_links[path] = getDownloadLink(file.get('download_link'))
+        else:
+            self.cached_links.move_to_end(path)
         download_link = self.cached_links[path]
-        
+
+        eviction_events = []
+
+        # Enforce max_linsks for cached_links
+        while len(self.cached_links) > self.max_linsks:
+            old_link, _ = self.cached_links.popitem(last=False)
+            # Remove all cache blocks for this link
+            keys_to_remove = [k for k in self.cache.keys() if k[0] == old_link]
+            for key in keys_to_remove:
+                del self.cache[key]
+            eviction_events.append(f"link")
+
         start_block = offset // self.block_size
         end_block = (offset + size - 1) // self.block_size
-        
+
         buffer = bytearray()
-        
+
         for block_index in range(start_block, end_block + 1):
             block_offset = block_index * self.block_size
             block_end = min((block_index + 1) * self.block_size - 1, file.get('file_size') - 1)
             current_block_size = block_end - block_offset + 1
-            
+
+            cache_key = (path, block_index)
             # check for block
-            if (path, block_index) not in self.cache:
+            if cache_key not in self.cache:
                 logging.debug(f"Cache miss for block {block_index}, fetching...")
                 # get block
                 block_data = downloadFile(download_link, current_block_size, block_offset)
                 if not block_data:
                     return -errno.EIO
                 # save block to cache
-                self.cache[(path, block_index)] = block_data
-                # lru cache
-                logging.debug(f"Cache params: {len(self.cache)} blocks, max {self.max_blocks_per_link * len(self.cached_links)} blocks ({self.max_blocks_per_link} per link), max {self.max_blocks} blocks")
-                if len(self.cache) > self.max_blocks_per_link * len(self.cached_links) or len(self.cache) > self.max_blocks:
-                    keys_to_remove = list(self.cache.keys())[:len(self.cache) - self.max_blocks]
-                    logging.debug(f"Removing {len(keys_to_remove)} blocks from cache")
-                    for key in keys_to_remove:
-                        logging.debug(f"Removing block {key} from cache")
-                        del self.cache[key]
-                if len(self.cached_links) > self.max_linsks:
-                    links_to_remove = list(self.cached_links.keys())[:len(self.cached_links) - self.max_linsks]
-                    logging.debug(f"Removing {len(links_to_remove)} links from cache")
-                    for link in links_to_remove:
-                        logging.debug(f"Removing link {link} from cache")
-                        del self.cached_links[link]
-                        keys_to_remove = [k for k in self.cache.keys() if k[0] == link]
-                        for key in keys_to_remove:
-                            logging.debug(f"Removing block {key} from cache")
-                            del self.cache[key]
-            # get block from cache
-            block_data = self.cache[(path, block_index)]
-            
+                self.cache[cache_key] = block_data
+            else:
+                # Move to end to mark as recently used
+                self.cache.move_to_end(cache_key)
+                block_data = self.cache[cache_key]
+
+            logging.debug(f"Cache: {len(self.cache)} blocks, max {self.max_blocks_per_link * len(self.cached_links)} blocks ({self.max_blocks_per_link} per link), max {self.max_blocks} blocks")
+            # LRU eviction for blocks per link
+            # Count blocks for this link
+            link_blocks = [k for k in self.cache.keys() if k[0] == path]
+            while len(link_blocks) > self.max_blocks_per_link:
+                # Remove least recently used block for this link
+                for k in list(self.cache.keys()):
+                    if k[0] == path:
+                        del self.cache[k]
+                        break
+                link_blocks = [k for k in self.cache.keys() if k[0] == path]
+                eviction_events.append(f"per-link block")
+
+            # LRU eviction for total blocks
+            while len(self.cache) > self.max_blocks:
+                _, evicted_block = self.cache.popitem(last=False)
+                del evicted_block  # Explicitly delete reference
+                eviction_events.append(f"total block")
+
             start_offset_in_block = max(0, offset - block_offset)
             end_offset_in_block = min(len(block_data), offset + size - block_offset)
-            
+
             view = memoryview(block_data)[start_offset_in_block:end_offset_in_block]
             buffer.extend(view)
-            # Explicitly delete reference to block_data to help GC
-            del block_data
-        
+            # No need to explicitly delete block_data
+
+        if len(eviction_events) > 0:
+            logging.debug(f"Eviction events: {', '.join(eviction_events)}")
+            logging.debug(f"After eviction: {len(self.cache)} blocks, max {self.max_blocks_per_link * len(self.cached_links)} blocks ({self.max_blocks_per_link} per link), max {self.max_blocks} blocks")
+            self.log_memory_usage("After eviction")
+            gc.collect()  # Explicitly collect garbage after eviction
+        # self.log_memory_usage("After read")
         return bytes(buffer)
     
     def release(self, _, fh):
