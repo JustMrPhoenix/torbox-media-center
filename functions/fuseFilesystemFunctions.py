@@ -28,6 +28,8 @@ if not hasattr(fuse, '__version__'):
 
 fuse.fuse_python_api = (0, 2)
 
+LINK_AGE = 3 * 60 * 60 # 3 hours
+
 class VirtualFileSystem:
     def __init__(self, files_list):
         self.files = files_list
@@ -196,24 +198,29 @@ class TorBoxMediaCenterFuse(Fuse):
         logging.debug(f"READ Offset: {offset}")
         file = self.vfs.get_file(path)
 
-        # LRU for cached_links
+        current_time = time.time()
         if path not in self.cached_links:
-            self.cached_links[path] = getDownloadLink(file.get('download_link'))
-        else:
-            self.cached_links.move_to_end(path)
-        download_link = self.cached_links[path]
+            self.cached_links[path] = {
+                'link': getDownloadLink(file.get('download_link')),
+                'timestamp': current_time
+            }
+        elif current_time - self.cached_links[path]['timestamp'] > LINK_AGE:
+            download_link = getDownloadLink(file.get('download_link'))
+            self.cached_links[path] = {
+                'link': download_link,
+                'timestamp': current_time
+            }
+        download_link = self.cached_links[path]['link']
 
-        eviction_events = []
-
-        # Enforce max_linsks for cached_links
-        while len(self.cached_links) > self.max_linsks:
+        # Enforce max_links for cached_links
+        while len(self.cached_links) > self.max_links:
             old_link, _ = self.cached_links.popitem(last=False)
             # Remove all cache blocks for this link
             keys_to_remove = [k for k in self.cache.keys() if k[0] == old_link]
             for key in keys_to_remove:
                 del self.cache[key]
             eviction_events.append(f"link")
-
+        
         start_block = offset // self.block_size
         end_block = (offset + size - 1) // self.block_size
 

@@ -1,6 +1,7 @@
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.schedulers.background import BackgroundScheduler
 from functions.appFunctions import bootUp, getMountMethod, getAllUserDownloadsFresh, getMountRefreshTime
+from functions.databaseFunctions import closeAllDatabases
 import logging
 from sys import platform
 
@@ -59,4 +60,5 @@ if __name__ == "__main__":
         elif mount_method == "strm":
             from functions.stremFilesystemFunctions import unmountStrm
             unmountStrm()
-        pass
+        closeAllDatabases()
+        exit(0)

@@ -38,6 +38,9 @@ def process_file(item, file, type):
         "item_id": item.get("id"),
         "type": type.value,
         "folder_name": item.get("name"),
+        "DEBUG_name": item.get("name"),
+        "DEBUG_hash": item.get("hash"),
+        "DEBUG_file_name": file.get("short_name"),
         "folder_hash": item.get("hash"),
         "file_id": file.get("id"),
         "file_name": file.get("short_name"),
@@ -54,7 +57,7 @@ def process_file(item, file, type):
     if item.get("name") == item.get("hash"):
         item["name"] = title_data.get("title", file.get("short_name"))
 
-    metadata, _, _ = searchMetadata(title_data.get("title", file.get("short_name")), title_data, file.get("short_name"), f"{item.get('name')} {file.get('short_name')}")
+    metadata, _, _ = searchMetadata(title_data.get("title", file.get("short_name")), title_data, file.get("short_name"), f"{item.get('name')} {file.get('short_name')}", item.get("hash"))
     data.update(metadata)
     logging.debug(data)
     insertData(data, type.value)
@@ -76,11 +79,16 @@ def getUserDownloads(type: DownloadType):
         try:
             response = api_http_client.get(f"/{type.value}/mylist", params=params)
         except Exception as e:
-            logging.error(f"Error fetching {type.value}: {e}")
-            return None, False, f"Error fetching {type.value}: {e}"
+            logging.error(f"Error fetching {type.value} at offset {offset}: {e}")
+            return None, False, f"Error fetching {type.value} at offset {offset}: {e}"
         if response.status_code != 200:
-            return None, False, f"Error fetching {type.value}. {response.status_code}"
-        data = response.json().get("data", [])
+            return None, False, f"Error fetching {type.value} at offset {offset}. {response.status_code}"
+        try:
+            data = response.json().get("data", [])
+        except Exception as e:
+            logging.error(f"Error parsing {type.value} at offset {offset}: {e}")
+            logging.error(f"Response: {response.text}")
+            return None, False, f"Error parsing {type.value} at offset {offset}. {e}"
         if not data:
             break
         file_data.extend(data)
@@ -135,7 +143,7 @@ def getUserDownloads(type: DownloadType):
             
     return files, True, f"{type.value.capitalize()} fetched successfully."
 
-def searchMetadata(query: str, title_data: dict, file_name: str, full_title: str):
+def searchMetadata(query: str, title_data: dict, file_name: str, full_title: str, hash: str):
     base_metadata = {
         "metadata_title": cleanTitle(query),
         "metadata_link": None,
@@ -153,10 +161,10 @@ def searchMetadata(query: str, title_data: dict, file_name: str, full_title: str
         response = search_api_http_client.get(f"/meta/search/{full_title}", params={"type": "file"})
     except Exception as e:
         logging.error(f"Error searching metadata: {e}")
-        return base_metadata, False, f"Error searching metadata: {e}"
+        return base_metadata, False, f"Error searching metadata: {e}. Searching for {query}, item hash: {hash}"
     if response.status_code != 200:
-        logging.error(f"Error searching metadata: {response.status_code}")
-        return base_metadata, False, f"Error searching metadata. {response.status_code}"
+        logging.error(f"Error searching metadata: {response.status_code}. {response.text}")
+        return base_metadata, False, f"Error searching metadata. {response.status_code}. Searching for {query}, item hash: {hash}"
     try:
         data = response.json().get("data", [])[0]
 
@@ -173,7 +181,7 @@ def searchMetadata(query: str, title_data: dict, file_name: str, full_title: str
         elif data.get("type") == "movie":
             file_name = f"{title} ({base_metadata['metadata_years']}){extension}"
         else:
-            return base_metadata, False, "No metadata found."
+            return base_metadata, False, f"No metadata found. Searching for {query}, item hash: {hash}"
             
         base_metadata["metadata_filename"] = file_name
         base_metadata["metadata_mediatype"] = data.get("type")
@@ -182,15 +190,15 @@ def searchMetadata(query: str, title_data: dict, file_name: str, full_title: str
         base_metadata["metadata_backdrop"] = data.get("backdrop")
         base_metadata["metadata_rootfoldername"] = f"{title} ({base_metadata['metadata_years']})"
 
-        return base_metadata, True, "Metadata found."
+        return base_metadata, True, f"Metadata found. Searching for {query}, item hash: {hash}"
     except IndexError:
-        return base_metadata, False, "No metadata found."
+        return base_metadata, False, f"No metadata found. Searching for {query}, item hash: {hash}"
     except httpx.TimeoutException:
-        return base_metadata, False, "Timeout searching metadata."
+        return base_metadata, False, f"Timeout searching metadata. Searching for {query}, item hash: {hash}"
     except Exception as e:
         logging.error(f"Error searching metadata: {e}")
         logging.error(f"Error searching metadata: {traceback.format_exc()}")
-        return base_metadata, False, f"Error searching metadata: {e}"
+        return base_metadata, False, f"Error searching metadata: {e}. Searching for {query}, item hash: {hash}"
 
 def getDownloadLink(url: str):
     response = general_http_client.get(url)
