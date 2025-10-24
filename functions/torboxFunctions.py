@@ -216,13 +216,17 @@ def downloadFile(url: str, size: int, offset: int = 0, retry: int = 3):
         return response.content
     elif response.status_code == httpx.codes.PARTIAL_CONTENT:
         return response.content
+    elif response.status_code == httpx.codes.TEMPORARY_REDIRECT or response.status_code == httpx.codes.PERMANENT_REDIRECT or response.status_code == httpx.codes.FOUND:
+        redirect_url = response.headers.get('Location')
+        logging.debug(f"Redirected to {redirect_url}. Retrying download.")
+        return downloadFile(redirect_url, size, offset, retry)
     elif response.status_code == httpx.codes.TOO_MANY_REQUESTS:
         logging.error("Too many requests. Please try again later.")
         if retry > 0:
             sleep_time = min(20 * (4 - retry), 20)
             logging.info(f"Retrying download. Attempts left: {retry}")
-            logging.debug(f"Retrying download for {url} with size {size} and offset {offset}. Sleeped for {sleep_time} seconds.")
             time.sleep(sleep_time)
+            logging.debug(f"Retrying download for {url} with size {size} and offset {offset}. Sleeped for {sleep_time} seconds.")
             return downloadFile(url, size, offset, retry - 1)
         else:
             logging.error("Max retries reached. Download failed.")

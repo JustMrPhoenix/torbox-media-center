@@ -129,7 +129,7 @@ class TorBoxMediaCenterFuse(Fuse):
         self.block_size = 1024 * 1024 * 16
         self.max_blocks_per_link = 32
         self.max_blocks = 128  # Total blocks in cache
-        self.max_linsks = 16  # Max links in cache
+        self.max_links = 16  # Max links in cache
 
     def getFiles(self):
         while True:
@@ -197,6 +197,7 @@ class TorBoxMediaCenterFuse(Fuse):
         logging.debug(f"READ Size: {size}")
         logging.debug(f"READ Offset: {offset}")
         file = self.vfs.get_file(path)
+        eviction_events = []
 
         current_time = time.time()
         if path not in self.cached_links:
