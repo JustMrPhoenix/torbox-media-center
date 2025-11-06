@@ -160,6 +160,7 @@ def searchMetadata(query: str, title_data: dict, file_name: str, full_title: str
     if not SCAN_METADATA:
         return base_metadata, False, "Metadata scanning is disabled."
     extension = os.path.splitext(file_name)[-1]
+    logging.debug(f"Searching metadata for {full_title}")
     try:
         response = search_api_http_client.get(f"/meta/search/{full_title}", params={"type": "file"})
     except Exception as e:
@@ -192,11 +193,13 @@ def searchMetadata(query: str, title_data: dict, file_name: str, full_title: str
         base_metadata["metadata_image"] = data.get("image")
         base_metadata["metadata_backdrop"] = data.get("backdrop")
         base_metadata["metadata_rootfoldername"] = f"{title} ({base_metadata['metadata_years']})"
-
+        logging.debug(f"Metadata found: {base_metadata}")
         return base_metadata, True, f"Metadata found. Searching for {query}, item hash: {hash}"
-    except IndexError:
+    except IndexError as e:
+        logging.debug(f"No metadata found. Searching for {query}, item hash: {hash}")
         return base_metadata, False, f"No metadata found. Searching for {query}, item hash: {hash}"
-    except httpx.TimeoutException:
+    except httpx.TimeoutException as e:
+        logging.error(f"Timeout searching metadata: {e}")
         return base_metadata, False, f"Timeout searching metadata. Searching for {query}, item hash: {hash}"
     except Exception as e:
         logging.error(f"Error searching metadata: {e}")
@@ -226,8 +229,11 @@ def downloadFile(url: str, size: int, offset: int = 0, retry: int = 3):
     elif response.status_code == httpx.codes.TOO_MANY_REQUESTS:
         logging.error("Too many requests. Please try again later.")
         if retry > 0:
-            sleep_time = min(20 * (4 - retry), 20)
-            logging.info(f"Retrying download. Attempts left: {retry}")
+            if response.headers.get("Retry-After"):
+                sleep_time = int(response.headers.get("Retry-After"))
+            else:
+                sleep_time = min(20 * (4 - retry), 20)
+            logging.info(f"Retrying download. Attempts left: {retry}. Sleeping for {sleep_time} seconds.")
             time.sleep(sleep_time)
             logging.debug(f"Retrying download for {url} with size {size} and offset {offset}. Sleeped for {sleep_time} seconds.")
             return downloadFile(url, size, offset, retry - 1)
