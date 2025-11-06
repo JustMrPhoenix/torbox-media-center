@@ -64,7 +64,7 @@ def process_file(item, file, type):
     insertData(data, type.value)
     return data
 
-def getUserDownloads(type: DownloadType):
+def getUserDownloads(type: DownloadType, retry: int = 3):
     offset = 0
     limit = 1000
     # limit = 1
@@ -82,7 +82,21 @@ def getUserDownloads(type: DownloadType):
         except Exception as e:
             logging.error(f"Error fetching {type.value} at offset {offset}: {e}")
             return None, False, f"Error fetching {type.value} at offset {offset}: {e}"
-        if response.status_code != 200:
+        if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
+            logging.error("Too many requests. Please try again later.")
+            if retry > 0:
+                if response.headers.get("Retry-After"):
+                    sleep_time = int(response.headers.get("Retry-After"))
+                else:
+                    sleep_time = min(20 * (4 - retry), 20)
+                logging.info(f"Retrying getUserDownloads for {type.value}. Attempts left: {retry}. Sleeping for {sleep_time} seconds.")
+                time.sleep(sleep_time)
+                logging.debug(f"Retrying getUserDownloads for {type.value} at offset {offset}. Sleeped for {sleep_time} seconds.")
+                return getUserDownloads(type, retry - 1)
+            else:
+                logging.error("Max retries reached. getUserDownloads failed.")
+                return None, False, "Max retries reached. getUserDownloads failed."
+        elif response.status_code != 200:
             return None, False, f"Error fetching {type.value} at offset {offset}. {response.status_code}"
         try:
             data = response.json().get("data", [])
@@ -144,7 +158,7 @@ def getUserDownloads(type: DownloadType):
             
     return files, True, f"{type.value.capitalize()} fetched successfully."
 
-def searchMetadata(query: str, title_data: dict, file_name: str, full_title: str, hash: str):
+def searchMetadata(query: str, title_data: dict, file_name: str, full_title: str, hash: str, retry: int = 3):
     base_metadata = {
         "metadata_title": cleanTitle(query),
         "metadata_link": None,
@@ -166,7 +180,21 @@ def searchMetadata(query: str, title_data: dict, file_name: str, full_title: str
     except Exception as e:
         logging.error(f"Error searching metadata: {e}")
         return base_metadata, False, f"Error searching metadata: {e}. Searching for {query}, item hash: {hash}"
-    if response.status_code != 200:
+    if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
+        logging.error("Too many requests. Please try again later.")
+        if retry > 0:
+            if response.headers.get("Retry-After"):
+                sleep_time = int(response.headers.get("Retry-After"))
+            else:
+                sleep_time = min(20 * (4 - retry), 20)
+            logging.info(f"Retrying searchMetadata. Attempts left: {retry}. Sleeping for {sleep_time} seconds.")
+            time.sleep(sleep_time)
+            logging.debug(f"Retrying searchMetadata for {full_title}. Sleeped for {sleep_time} seconds.")
+            return searchMetadata(query, title_data, file_name, full_title, hash, retry - 1)
+        else:
+            logging.error("Max retries reached. searchMetadata failed.")
+            return base_metadata, False, "Max retries reached. searchMetadata failed."
+    elif response.status_code != 200:
         logging.error(f"Error searching metadata: {response.status_code}. {response.text}")
         return base_metadata, False, f"Error searching metadata. {response.status_code}. Searching for {query}, item hash: {hash}"
     try:
@@ -206,10 +234,24 @@ def searchMetadata(query: str, title_data: dict, file_name: str, full_title: str
         logging.error(f"Error searching metadata: {traceback.format_exc()}")
         return base_metadata, False, f"Error searching metadata: {e}. Searching for {query}, item hash: {hash}"
 
-def getDownloadLink(url: str):
+def getDownloadLink(url: str, retry: int = 3):
     response = general_http_client.get(url)
     if response.status_code == httpx.codes.TEMPORARY_REDIRECT or response.status_code == httpx.codes.PERMANENT_REDIRECT or response.status_code == httpx.codes.FOUND:
         return response.headers.get('Location')
+    elif response.status_code == httpx.codes.TOO_MANY_REQUESTS:
+        logging.error("Too many requests. Please try again later.")
+        if retry > 0:
+            if response.headers.get("Retry-After"):
+                sleep_time = int(response.headers.get("Retry-After"))
+            else:
+                sleep_time = min(20 * (4 - retry), 20)
+            logging.info(f"Retrying getDownloadLink. Attempts left: {retry}. Sleeping for {sleep_time} seconds.")
+            time.sleep(sleep_time)
+            logging.debug(f"Retrying getDownloadLink for {url}. Sleeped for {sleep_time} seconds.")
+            return getDownloadLink(url, retry - 1)
+        else:
+            logging.error("Max retries reached. getDownloadLink failed.")
+            raise Exception("Max retries reached. getDownloadLink failed.")
     return url
 
 def downloadFile(url: str, size: int, offset: int = 0, retry: int = 3):
