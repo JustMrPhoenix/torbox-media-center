@@ -85,8 +85,8 @@ def getUserDownloads(type: DownloadType, retry: int = 3):
         if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
             logging.error("Too many requests. Please try again later.")
             if retry > 0:
-                if response.headers.get("Retry-After"):
-                    sleep_time = int(response.headers.get("Retry-After"))
+                if response.headers.get("Retry-After") or response.headers.get("x-ratelimit-after"):
+                    sleep_time = max(int(response.headers.get("Retry-After", 0)), int(response.headers.get("x-ratelimit-after", 0)))
                 else:
                     sleep_time = min(20 * (4 - retry), 20)
                 logging.info(f"Retrying getUserDownloads for {type.value}. Attempts left: {retry}. Sleeping for {sleep_time} seconds.")
@@ -183,8 +183,8 @@ def searchMetadata(query: str, title_data: dict, file_name: str, full_title: str
     if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
         logging.error("Too many requests. Please try again later.")
         if retry > 0:
-            if response.headers.get("Retry-After"):
-                sleep_time = int(response.headers.get("Retry-After"))
+            if response.headers.get("Retry-After") or response.headers.get("x-ratelimit-after"):
+                sleep_time = max(int(response.headers.get("Retry-After", 0)), int(response.headers.get("x-ratelimit-after", 0)))
             else:
                 sleep_time = min(20 * (4 - retry), 20)
             logging.info(f"Retrying searchMetadata. Attempts left: {retry}. Sleeping for {sleep_time} seconds.")
@@ -241,8 +241,8 @@ def getDownloadLink(url: str, retry: int = 3):
     elif response.status_code == httpx.codes.TOO_MANY_REQUESTS:
         logging.error("Too many requests. Please try again later.")
         if retry > 0:
-            if response.headers.get("Retry-After"):
-                sleep_time = int(response.headers.get("Retry-After"))
+            if response.headers.get("Retry-After") or response.headers.get("x-ratelimit-after"):
+                sleep_time = max(int(response.headers.get("Retry-After", 0)), int(response.headers.get("x-ratelimit-after", 0)))
             else:
                 sleep_time = min(20 * (4 - retry), 20)
             logging.info(f"Retrying getDownloadLink. Attempts left: {retry}. Sleeping for {sleep_time} seconds.")
@@ -271,8 +271,8 @@ def downloadFile(url: str, size: int, offset: int = 0, retry: int = 3):
     elif response.status_code == httpx.codes.TOO_MANY_REQUESTS:
         logging.error("Too many requests. Please try again later.")
         if retry > 0:
-            if response.headers.get("Retry-After"):
-                sleep_time = int(response.headers.get("Retry-After"))
+            if response.headers.get("Retry-After") or response.headers.get("x-ratelimit-after"):
+                sleep_time = max(int(response.headers.get("Retry-After", 0)), int(response.headers.get("x-ratelimit-after", 0)))
             else:
                 sleep_time = min(20 * (4 - retry), 20)
             logging.info(f"Retrying download. Attempts left: {retry}. Sleeping for {sleep_time} seconds.")
